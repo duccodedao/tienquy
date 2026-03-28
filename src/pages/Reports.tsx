@@ -19,16 +19,29 @@ export const Reports = () => {
   });
 
   useEffect(() => {
-    const unsubTx = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (snapshot) => {
-      const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(txData);
-      setLoading(false);
-    });
+    const unsubTx = onSnapshot(
+      query(collection(db, 'transactions'), orderBy('date', 'desc')), 
+      (snapshot) => {
+        const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(txData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching transactions:", error);
+        setLoading(false);
+      }
+    );
 
-    const unsubFunds = onSnapshot(collection(db, 'funds'), (snapshot) => {
-      const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
-      setFunds(fundsData);
-    });
+    const unsubFunds = onSnapshot(
+      collection(db, 'funds'), 
+      (snapshot) => {
+        const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
+        setFunds(fundsData);
+      },
+      (error) => {
+        console.error("Error fetching funds:", error);
+      }
+    );
 
     return () => {
       unsubTx();
@@ -48,7 +61,8 @@ export const Reports = () => {
     const dataMap = new Map();
     
     filteredTx.forEach(tx => {
-      const dayStr = format(tx.date, 'dd/MM');
+      if (!tx.date || isNaN(new Date(tx.date).getTime())) return;
+      const dayStr = format(new Date(tx.date), 'dd/MM');
       if (!dataMap.has(dayStr)) {
         dataMap.set(dayStr, { name: dayStr, Thu: 0, Chi: 0, timestamp: new Date(tx.date).setHours(0,0,0,0) });
       }
@@ -65,12 +79,12 @@ export const Reports = () => {
   const cashFlowData = useMemo(() => {
     let cumulative = 0;
     // Sort ascending for cumulative calculation
-    const sortedTx = [...filteredTx].sort((a, b) => a.date - b.date);
+    const sortedTx = [...filteredTx].filter(tx => tx.date && !isNaN(new Date(tx.date).getTime())).sort((a, b) => a.date - b.date);
     
     return sortedTx.map(tx => {
       cumulative += tx.type === 'income' ? tx.amount : -tx.amount;
       return {
-        date: format(tx.date, 'dd/MM'),
+        date: format(new Date(tx.date), 'dd/MM'),
         'Số dư': cumulative
       };
     });

@@ -33,16 +33,29 @@ export const Dashboard = () => {
   const [selectedGroup, setSelectedGroup] = useState<Transaction[] | null>(null);
 
   useEffect(() => {
-    const fundsUnsub = onSnapshot(collection(db, 'funds'), (snapshot) => {
-      const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
-      setFunds(fundsData);
-    });
+    const fundsUnsub = onSnapshot(
+      collection(db, 'funds'), 
+      (snapshot) => {
+        const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
+        setFunds(fundsData);
+      },
+      (error) => {
+        console.error("Error fetching funds:", error);
+      }
+    );
 
-    const txUnsub = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (snapshot) => {
-      const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(txData);
-      setLoading(false);
-    });
+    const txUnsub = onSnapshot(
+      query(collection(db, 'transactions'), orderBy('date', 'desc')), 
+      (snapshot) => {
+        const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(txData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching transactions:", error);
+        setLoading(false);
+      }
+    );
 
     return () => {
       fundsUnsub();
@@ -119,6 +132,11 @@ export const Dashboard = () => {
       </div>
     </div>;
   }
+
+  const safeFormat = (date: number | string | Date, formatStr: string) => {
+    if (!date || isNaN(new Date(date).getTime())) return 'N/A';
+    return format(new Date(date), formatStr);
+  };
 
   return (
     <div className="space-y-6">
@@ -264,7 +282,7 @@ export const Dashboard = () => {
 
                 return (
                   <tr key={firstTx.batchId || firstTx.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="px-6 py-4 whitespace-nowrap">{format(firstTx.date, 'dd/MM/yyyy HH:mm')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{safeFormat(firstTx.date, 'dd/MM/yyyy HH:mm')}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                         isMixed ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
@@ -346,7 +364,7 @@ export const Dashboard = () => {
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Chi tiết lô giao dịch ({format(selectedGroup[0].date, 'dd/MM/yyyy HH:mm')})
+                Chi tiết lô giao dịch ({safeFormat(selectedGroup[0].date, 'dd/MM/yyyy HH:mm')})
               </h2>
               <button 
                 onClick={() => setSelectedGroup(null)}

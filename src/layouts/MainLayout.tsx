@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink, Outlet, Navigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -16,32 +16,30 @@ import {
   X,
   Moon,
   Sun,
-  Monitor
+  Monitor,
+  Users
 } from 'lucide-react';
 import { Toaster } from 'sonner';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, adminOnly: false },
-  { path: '/funds', label: 'Quản lý quỹ', icon: <Wallet size={20} />, adminOnly: true },
+  { path: '/funds', label: 'Quản lý quỹ', icon: <Wallet size={20} />, adminOnly: false },
   { path: '/income', label: 'Nhập quỹ (Thu)', icon: <ArrowDownCircle size={20} />, adminOnly: true },
   { path: '/expense', label: 'Xuất quỹ (Chi)', icon: <ArrowUpCircle size={20} />, adminOnly: true },
   { path: '/history', label: 'Lịch sử', icon: <History size={20} />, adminOnly: false },
   { path: '/reports', label: 'Thống kê', icon: <BarChart3 size={20} />, adminOnly: false },
-  { path: '/settings', label: 'Ghi chú mẫu', icon: <Settings size={20} />, adminOnly: true },
+  { path: '/settings', label: 'Ghi chú mẫu', icon: <Settings size={20} />, adminOnly: false },
+  { path: '/admins', label: 'Quản lý Admin', icon: <Users size={20} />, superAdminOnly: true },
 ];
 
 export const MainLayout = () => {
-  const { user, isAdmin, logout, loading } = useAuth();
+  const { user, isAdmin, isSuperAdmin, logout, loading } = useAuth();
   const { theme, setTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">Đang tải...</div>;
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
   }
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
@@ -70,7 +68,11 @@ export const MainLayout = () => {
         </div>
 
         <nav className="p-4 space-y-1 overflow-y-auto h-[calc(100vh-4rem)]">
-          {navItems.filter(item => !item.adminOnly || isAdmin).map((item) => (
+          {navItems.filter(item => {
+            if (item.superAdminOnly) return isSuperAdmin;
+            if (item.adminOnly) return isAdmin;
+            return true;
+          }).map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -129,22 +131,33 @@ export const MainLayout = () => {
 
             {/* User Profile & Logout */}
             <div className="flex items-center space-x-3 border-l border-gray-200 dark:border-gray-700 pl-4">
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-medium">{user.displayName}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{user.email}</span>
-              </div>
-              <img 
-                src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
-                alt="Avatar" 
-                className="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-600"
-              />
-              <button 
-                onClick={() => setConfirmLogout(true)}
-                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-400 rounded-lg transition-colors"
-                title="Đăng xuất"
-              >
-                <LogOut size={20} />
-              </button>
+              {user ? (
+                <>
+                  <div className="hidden sm:flex flex-col items-end">
+                    <span className="text-sm font-medium">{user.displayName || user.email?.split('@')[0]}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{user.email}</span>
+                  </div>
+                  <img 
+                    src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}`} 
+                    alt="Avatar" 
+                    className="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-600"
+                  />
+                  <button 
+                    onClick={() => setConfirmLogout(true)}
+                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-400 rounded-lg transition-colors"
+                    title="Đăng xuất"
+                  >
+                    <LogOut size={20} />
+                  </button>
+                </>
+              ) : (
+                <NavLink
+                  to="/login"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  Đăng nhập
+                </NavLink>
+              )}
             </div>
           </div>
         </header>

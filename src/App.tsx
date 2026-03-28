@@ -15,6 +15,7 @@ import { Income, Expense } from './pages/TransactionForm';
 import { History } from './pages/History';
 import { Reports } from './pages/Reports';
 import { PredefinedNotes } from './pages/PredefinedNotes';
+import { AdminManagement } from './pages/AdminManagement';
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="history" element={<History />} />
               <Route path="reports" element={<Reports />} />
               <Route path="settings" element={<PredefinedNotes />} />
+              <Route path="admins" element={<AdminManagement />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

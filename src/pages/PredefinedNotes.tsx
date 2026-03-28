@@ -9,7 +9,7 @@ import { Navigate } from 'react-router-dom';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export const PredefinedNotes = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, loading: authLoading } = useAuth();
   const [notes, setNotes] = useState<PredefinedNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -105,8 +105,8 @@ export const PredefinedNotes = () => {
     }
   };
 
-  if (!isAdmin) return <Navigate to="/" replace />;
-  if (loading) return <div>Đang tải...</div>;
+  // if (!isAdmin) return <Navigate to="/" replace />;
+  if (loading || authLoading) return <div>Đang tải...</div>;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -114,36 +114,38 @@ export const PredefinedNotes = () => {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quản lý Ghi chú mẫu</h1>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Thêm ghi chú mới</h2>
-        <form onSubmit={handleAddSubmit} className="flex flex-col sm:flex-row gap-4">
-          <input
-            type="text"
-            value={newContent}
-            onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Nội dung ghi chú..."
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-            required
-          />
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value as TransactionType | 'both')}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-          >
-            <option value="both">Dùng chung</option>
-            <option value="income">Chỉ dùng cho Thu</option>
-            <option value="expense">Chỉ dùng cho Chi</option>
-          </select>
-          <button
-            type="submit"
-            disabled={!newContent.trim()}
-            className="flex items-center justify-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            <Plus size={20} className="mr-2" />
-            Thêm
-          </button>
-        </form>
-      </div>
+      {isAdmin && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Thêm ghi chú mới</h2>
+          <form onSubmit={handleAddSubmit} className="flex flex-col sm:flex-row gap-4">
+            <input
+              type="text"
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              placeholder="Nội dung ghi chú..."
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as TransactionType | 'both')}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="both">Dùng chung</option>
+              <option value="income">Chỉ dùng cho Thu</option>
+              <option value="expense">Chỉ dùng cho Chi</option>
+            </select>
+            <button
+              type="submit"
+              disabled={!newContent.trim()}
+              className="flex items-center justify-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              <Plus size={20} className="mr-2" />
+              Thêm
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <table className="w-full text-sm text-left">
@@ -151,7 +153,7 @@ export const PredefinedNotes = () => {
             <tr>
               <th className="px-6 py-4">Nội dung</th>
               <th className="px-6 py-4 w-40">Loại</th>
-              <th className="px-6 py-4 w-32 text-right">Thao tác</th>
+              {isAdmin && <th className="px-6 py-4 w-32 text-right">Thao tác</th>}
             </tr>
           </thead>
           <tbody>
@@ -199,43 +201,45 @@ export const PredefinedNotes = () => {
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    {isEditing === note.id ? (
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => handleSaveEditClick(note.id)}
-                          className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                          title="Lưu"
-                        >
-                          <Save size={18} />
-                        </button>
-                        <button
-                          onClick={cancelEdit}
-                          className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                          title="Hủy"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => startEdit(note)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          title="Sửa"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button
-                          onClick={() => setDeleteId(note.id)}
-                          className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                          title="Xóa"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    )}
-                  </td>
+                  {isAdmin && (
+                    <td className="px-6 py-4 text-right">
+                      {isEditing === note.id ? (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => handleSaveEditClick(note.id)}
+                            className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            title="Lưu"
+                          >
+                            <Save size={18} />
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Hủy"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => startEdit(note)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            title="Sửa"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteId(note.id)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="Xóa"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

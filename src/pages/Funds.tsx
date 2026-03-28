@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export const Funds = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, loading: authLoading } = useAuth();
   const [funds, setFunds] = useState<Fund[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -93,12 +93,15 @@ export const Funds = () => {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return <div className="animate-pulse space-y-4">
       <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
       <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
     </div>;
   }
+
+  // Allow non-admins to view funds, but hide add/edit/delete buttons
+  // if (!isAdmin) return <Navigate to="/" replace />;
 
   const totalBalance = funds.reduce((sum, f) => sum + f.balance, 0);
 

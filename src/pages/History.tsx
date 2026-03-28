@@ -42,16 +42,30 @@ export const History = () => {
   const [confirmEditTx, setConfirmEditTx] = useState<Transaction | null>(null);
 
   useEffect(() => {
-    const unsubTx = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (snapshot) => {
-      const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(txData);
-      setLoading(false);
-    });
+    const unsubTx = onSnapshot(
+      query(collection(db, 'transactions'), orderBy('date', 'desc')), 
+      (snapshot) => {
+        const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(txData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching transactions:", error);
+        toast.error("Không thể tải dữ liệu giao dịch. Vui lòng kiểm tra kết nối hoặc quyền truy cập.");
+        setLoading(false);
+      }
+    );
 
-    const unsubFunds = onSnapshot(collection(db, 'funds'), (snapshot) => {
-      const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
-      setFunds(fundsData);
-    });
+    const unsubFunds = onSnapshot(
+      collection(db, 'funds'), 
+      (snapshot) => {
+        const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
+        setFunds(fundsData);
+      },
+      (error) => {
+        console.error("Error fetching funds:", error);
+      }
+    );
 
     return () => {
       unsubTx();
@@ -62,8 +76,12 @@ export const History = () => {
   // Filter logic
   const filteredTransactions = useMemo(() => {
     return transactions.filter(tx => {
-      const matchesSearch = tx.note.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            tx.fundName.toLowerCase().includes(searchTerm.toLowerCase());
+      const note = tx.note || '';
+      const fundName = tx.fundName || '';
+      const searchLower = (searchTerm || '').toLowerCase();
+      
+      const matchesSearch = note.toLowerCase().includes(searchLower) || 
+                            fundName.toLowerCase().includes(searchLower);
       const matchesType = filterType === 'all' || tx.type === filterType;
       const matchesFund = filterFund === 'all' || tx.fundId === filterFund;
       
@@ -105,10 +123,10 @@ export const History = () => {
       // Revert fund balance
       const fundRef = doc(db, 'funds', deleteTx.fundId);
       const balanceChange = deleteTx.type === 'income' ? -deleteTx.amount : deleteTx.amount;
-      batch.update(fundRef, {
+      batch.set(fundRef, {
         balance: increment(balanceChange),
         updatedAt: Date.now()
-      });
+      }, { merge: true });
 
       await batch.commit();
       toast.success('Đã xóa giao dịch và hoàn lại số dư');
@@ -161,19 +179,19 @@ export const History = () => {
           
           if (netChange !== 0) {
             const fundRef = doc(db, 'funds', confirmEditTx.fundId);
-            batch.update(fundRef, { balance: increment(netChange) });
+            batch.set(fundRef, { balance: increment(netChange) }, { merge: true });
           }
         } else {
           // Different funds, update separately
           // 1. Revert original transaction effect on original fund
           const origFundRef = doc(db, 'funds', confirmEditTx.fundId);
           const revertChange = confirmEditTx.type === 'income' ? -confirmEditTx.amount : confirmEditTx.amount;
-          batch.update(origFundRef, { balance: increment(revertChange) });
+          batch.set(origFundRef, { balance: increment(revertChange) }, { merge: true });
 
           // 2. Apply new transaction effect on new fund
           const newFundRef = doc(db, 'funds', editData.fundId!);
           const applyChange = editData.type === 'income' ? newAmount : -newAmount;
-          batch.update(newFundRef, { balance: increment(applyChange) });
+          batch.set(newFundRef, { balance: increment(applyChange) }, { merge: true });
         }
       }
 
@@ -197,9 +215,14 @@ export const History = () => {
     }
   };
 
+  const safeFormat = (date: number | string | Date, formatStr: string) => {
+    if (!date || isNaN(new Date(date).getTime())) return 'N/A';
+    return format(new Date(date), formatStr);
+  };
+
   const exportToExcel = () => {
     const dataToExport = filteredTransactions.map(tx => ({
-      'Ngày giờ': format(tx.date, 'dd/MM/yyyy HH:mm'),
+      'Ngày giờ': safeFormat(tx.date, 'dd/MM/yyyy HH:mm'),
       'Loại': tx.type === 'income' ? 'Thu' : 'Chi',
       'Số tiền': tx.amount,
       'Quỹ': tx.fundName,
@@ -210,7 +233,7 @@ export const History = () => {
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Giao dịch");
-    XLSX.writeFile(wb, `Lich_su_giao_dich_${format(new Date(), 'ddMMyyyy')}.xlsx`);
+    XLSX.writeFile(wb, `Lich_su_giao_dich_${safeFormat(new Date(), 'ddMMyyyy')}.xlsx`);
   };
 
   const exportToPDF = () => {
@@ -220,7 +243,7 @@ export const History = () => {
     
     const tableColumn = ["Ngày giờ", "Loại", "Số tiền", "Quỹ", "Ghi chú"];
     const tableRows = filteredTransactions.map(tx => [
-      format(tx.date, 'dd/MM/yyyy HH:mm'),
+      safeFormat(tx.date, 'dd/MM/yyyy HH:mm'),
       tx.type === 'income' ? 'Thu' : 'Chi',
       new Intl.NumberFormat('vi-VN').format(tx.amount),
       tx.fundName,
@@ -234,7 +257,7 @@ export const History = () => {
       styles: { font: 'helvetica' },
     });
 
-    doc.save(`Lich_su_giao_dich_${format(new Date(), 'ddMMyyyy')}.pdf`);
+    doc.save(`Lich_su_giao_dich_${safeFormat(new Date(), 'ddMMyyyy')}.pdf`);
   };
 
   const copyAsText = () => {
@@ -244,14 +267,14 @@ export const History = () => {
     }
 
     let text = 'BÁO CÁO GIAO DỊCH\n';
-    text += `Ngày xuất: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n`;
+    text += `Ngày xuất: ${safeFormat(new Date(), 'dd/MM/yyyy HH:mm')}\n`;
     text += '----------------------------------------\n\n';
 
     let totalIncome = 0;
     let totalExpense = 0;
 
     filteredTransactions.forEach((tx, index) => {
-      const dateStr = format(new Date(tx.date), 'dd/MM/yyyy HH:mm');
+      const dateStr = safeFormat(tx.date, 'dd/MM/yyyy HH:mm');
       const typeStr = tx.type === 'income' ? 'Thu' : 'Chi';
       const amountStr = formatCurrency(tx.amount);
       
@@ -294,7 +317,7 @@ export const History = () => {
       const image = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = image;
-      link.download = `Bao_Cao_Giao_Dich_${format(new Date(), 'dd_MM_yyyy_HH_mm')}.png`;
+      link.download = `Bao_Cao_Giao_Dich_${safeFormat(new Date(), 'dd_MM_yyyy_HH_mm')}.png`;
       link.click();
       
       toast.success('Đã xuất ảnh báo cáo thành công');
@@ -524,7 +547,7 @@ export const History = () => {
                   {editingId === tx.id ? (
                     // Edit Mode
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap">{format(tx.date, 'dd/MM/yyyy HH:mm')}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{safeFormat(tx.date, 'dd/MM/yyyy HH:mm')}</td>
                       <td className="px-6 py-4">
                         <select 
                           value={editData.type}
@@ -574,7 +597,7 @@ export const History = () => {
                   ) : (
                     // View Mode
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap">{format(tx.date, 'dd/MM/yyyy HH:mm')}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{safeFormat(tx.date, 'dd/MM/yyyy HH:mm')}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                           tx.type === 'income' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
@@ -691,7 +714,7 @@ export const History = () => {
                   <tbody>
                     {batchTransactions.map((tx) => (
                       <tr key={tx.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                        <td className="px-4 py-3 whitespace-nowrap">{format(tx.date, 'dd/MM/yyyy HH:mm')}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{safeFormat(tx.date, 'dd/MM/yyyy HH:mm')}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                             tx.type === 'income' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
