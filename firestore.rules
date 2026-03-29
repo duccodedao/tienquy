@@ -40,6 +40,22 @@ service cloud.firestore {
     // Collection: settings
     // Document ID: security, permissions, predefinedNotes
     //
+    // Collection: notifications
+    // Document ID: notificationId
+    // Fields:
+    //   - title: string
+    //   - content: string
+    //   - type: string (regular, app_open)
+    //   - createdAt: number
+    //   - createdBy: string
+    //   - creatorName: string
+    //   - isActive: boolean
+    //
+    // Collection: users/{userId}/readNotifications
+    // Document ID: notificationId
+    // Fields:
+    //   - readAt: number
+    //
     // ===============================================================
 
     // ===============================================================
@@ -102,6 +118,18 @@ service cloud.firestore {
       allow create: if isAuthenticated() && (hasPermission('canAddTransaction') || isSuperAdmin()) && isNotLocked();
       allow update: if isAuthenticated() && (hasPermission('canEditTransaction') || isSuperAdmin()) && isNotLocked();
       allow delete: if isAuthenticated() && (hasPermission('canDeleteTransaction') || isSuperAdmin()) && isNotLocked();
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (hasPermission('canManageNotifications') || isSuperAdmin()) && isNotLocked();
+    }
+
+    // User read notifications
+    match /users/{userId}/readNotifications/{notificationId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
     }
 
     // Settings collection

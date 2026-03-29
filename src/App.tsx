@@ -17,6 +17,7 @@ import { History } from './pages/History';
 import { Reports } from './pages/Reports';
 import { PredefinedNotes } from './pages/PredefinedNotes';
 import { AdminManagement } from './pages/AdminManagement';
+import { NotificationAdmin } from './pages/NotificationAdmin';
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
                 <Route path="reports" element={<Reports />} />
                 <Route path="settings" element={<PredefinedNotes />} />
                 <Route path="admins" element={<AdminManagement />} />
+                <Route path="notifications" element={<NotificationAdmin />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

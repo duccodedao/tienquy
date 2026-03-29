@@ -62,14 +62,34 @@
         "canExportData": { "type": "boolean" },
         "canImportData": { "type": "boolean" },
         "canManageFunds": { "type": "boolean" },
-        "canManageNotes": { "type": "boolean" }
+        "canManageNotes": { "type": "boolean" },
+        "canManageNotifications": { "type": "boolean" }
       }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification for users",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["regular", "app_open"] },
+        "createdAt": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["title", "content", "type", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User documents"
+    },
+    "/users/{userId}/readNotifications/{notificationId}": {
+      "schema": { "type": "object", "properties": { "readAt": { "type": "number" } } },
+      "description": "Tracking read status for notifications per user"
     },
     "/funds/{fundId}": {
       "schema": "Fund",
@@ -78,6 +98,10 @@
     "/transactions/{txId}": {
       "schema": "Transaction",
       "description": "Transaction documents"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System notifications"
     },
     "/settings/security": {
       "schema": {

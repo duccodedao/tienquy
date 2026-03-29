@@ -21,56 +21,77 @@ export const NotificationManager: React.FC = () => {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (isFirstLoadRef.current) {
-        isFirstLoadRef.current = false;
-        return;
+        // We still want to process the first load for regular notifications 
+        // if they are new (since we might have missed them while offline)
+        // but for transactions we skip to avoid spamming old history.
       }
 
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          
-          // Only notify if it's a new transaction (created after we started listening)
           if (data.createdAt > initTimeRef.current) {
-            triggerNotification(data);
+            triggerTransactionNotification(data);
           }
         }
       });
     }, (error) => {
-      console.error("Error listening for notifications:", error);
+      console.error("Error listening for transactions:", error);
     });
 
-    return () => unsubscribe();
+    // Listen for new regular notifications
+    const nq = query(
+      collection(db, 'notifications'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribeNotifications = onSnapshot(nq, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          // Filter on client side: only active, regular, and new
+          if (data.isActive && data.type === 'regular' && data.createdAt > initTimeRef.current) {
+            triggerSystemNotification(data);
+          }
+        }
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeNotifications();
+    };
   }, [user]);
 
-  const triggerNotification = (data: any) => {
+  const triggerTransactionNotification = (data: any) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
     const isIncome = data.type === 'income';
     const title = isIncome ? '💰 Nhập quỹ mới' : '💸 Xuất quỹ mới';
     const amountStr = formatCurrency(data.amount);
-    const body = `${data.note}\nSố tiền: ${isIncome ? '+' : '-'}${amountStr}\nQuỹ: ${data.fundName}\nNgười tạo: ${data.createdBy}`;
+    const body = `${data.note}\nSố tiền: ${isIncome ? '+' : '-'}${amountStr}\nQuỹ: ${data.fundName}\nNgười tạo: ${data.creatorName || data.createdBy}`;
 
+    showNotification(title, body);
+  };
+
+  const triggerSystemNotification = (data: any) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    showNotification(`📢 ${data.title}`, data.content);
+  };
+
+  const showNotification = (title: string, body: string) => {
     try {
-      // Try to use Service Worker registration for mobile support
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.ready.then(registration => {
           registration.showNotification(title, {
             body,
             icon: 'https://hdd.io.vn/img/bmassloadings.png',
-            tag: `tx-${data.createdAt}`
+            tag: `notif-${Date.now()}`
           });
         }).catch(() => {
-          // Fallback to standard notification
-          new Notification(title, { 
-            body,
-            icon: 'https://hdd.io.vn/img/bmassloadings.png'
-          });
+          new Notification(title, { body, icon: 'https://hdd.io.vn/img/bmassloadings.png' });
         });
       } else {
-        new Notification(title, { 
-          body,
-          icon: 'https://hdd.io.vn/img/bmassloadings.png'
-        });
+        new Notification(title, { body, icon: 'https://hdd.io.vn/img/bmassloadings.png' });
       }
     } catch (e) {
       console.error("Error showing notification:", e);

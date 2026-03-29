@@ -19,6 +19,7 @@ interface RolePermissions {
   canManageFunds: boolean;
   canManageNotes: boolean;
   canRecalculateBalances: boolean;
+  canManageNotifications: boolean;
 }
 
 interface Permissions {
@@ -43,6 +44,7 @@ const defaultPermissions: Permissions = {
     canManageFunds: false,
     canManageNotes: false,
     canRecalculateBalances: false,
+    canManageNotifications: false,
   },
   admin: {
     canViewDashboard: true,
@@ -60,6 +62,7 @@ const defaultPermissions: Permissions = {
     canManageFunds: true,
     canManageNotes: true,
     canRecalculateBalances: true,
+    canManageNotifications: true,
   }
 };
 

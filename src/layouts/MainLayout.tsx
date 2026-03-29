@@ -28,6 +28,8 @@ import { Toaster, toast } from 'sonner';
 import { NotificationManager } from '../components/NotificationManager';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { usePermissions } from '../contexts/PermissionsContext';
+import { NotificationCenter } from '../components/NotificationCenter';
+import { AppNotificationModal } from '../components/AppNotificationModal';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'canViewDashboard' },
@@ -38,6 +40,7 @@ const navItems = [
   { path: '/reports', label: 'Thống kê', icon: <BarChart3 size={20} />, permission: 'canViewReports' },
   { path: '/settings', label: 'Ghi chú mẫu', icon: <Settings size={20} />, permission: 'canViewSettings' },
   { path: '/admins', label: 'Quản lý Admin', icon: <Users size={20} />, permission: 'canManageAdmins' },
+  { path: '/notifications', label: 'Quản lý thông báo', icon: <Bell size={20} />, permission: 'canManageNotifications' },
 ];
 
 export const MainLayout = () => {
@@ -173,7 +176,10 @@ export const MainLayout = () => {
           </button>
 
           <div className="flex items-center space-x-2 sm:space-x-4 ml-auto">
-            {/* Notifications */}
+            {/* Notifications Center */}
+            <NotificationCenter />
+
+            {/* PWA Notifications Toggle */}
             {'Notification' in window && notificationPermission !== 'granted' && (
               <button
                 onClick={requestNotificationPermission}
@@ -271,6 +277,7 @@ export const MainLayout = () => {
       </div>
       <Toaster position="top-right" richColors />
       <NotificationManager />
+      <AppNotificationModal />
 
       <ConfirmModal
         isOpen={confirmLogout}

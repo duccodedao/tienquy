@@ -152,6 +152,7 @@ export const AdminManagement = () => {
     canManageFunds: 'Quản lý Quỹ (Thêm/Sửa/Xóa)',
     canManageNotes: 'Quản lý Ghi chú mẫu',
     canRecalculateBalances: 'Tính tự động lại số dư từ đầu',
+    canManageNotifications: 'Quản lý Thông báo hệ thống',
   };
 
   const handleTogglePermission = async (role: 'user' | 'admin', key: string) => {
