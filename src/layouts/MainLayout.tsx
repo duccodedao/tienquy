@@ -189,14 +189,6 @@ export const MainLayout = () => {
                 <BellOff size={20} />
               </button>
             )}
-            {'Notification' in window && notificationPermission === 'granted' && (
-              <button
-                className="p-2 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors"
-                title="Thông báo đã bật"
-              >
-                <Bell size={20} />
-              </button>
-            )}
 
             {/* Theme Toggle */}
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-full p-1">
