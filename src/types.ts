@@ -23,6 +23,7 @@ export interface Transaction {
   note: string;
   fundId: string;
   fundName: string;
+  balanceAfter: number;
   createdAt: number;
   createdBy: string;
   batchId?: string;

@@ -7,6 +7,7 @@ import { Plus, Trash2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../contexts/PermissionsContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 interface TransactionRow {
@@ -22,6 +23,7 @@ interface TransactionFormProps {
 
 export const TransactionForm: React.FC<TransactionFormProps> = ({ type }) => {
   const { user, isAdmin, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [funds, setFunds] = useState<Fund[]>([]);
   const [predefinedNotes, setPredefinedNotes] = useState<PredefinedNote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,11 +49,17 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ type }) => {
         setRows(prev => prev.map(row => row.fundId === '' ? { ...row, fundId: fundsData[0].id } : row));
       }
       setLoading(false);
+    }, (error) => {
+      console.error("Error fetching funds:", error);
+      toast.error("Không thể tải danh sách quỹ");
+      setLoading(false);
     });
 
     const unsubNotes = onSnapshot(collection(db, 'predefinedNotes'), (snapshot) => {
       const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PredefinedNote));
       setPredefinedNotes(notesData.filter(n => n.type === type || n.type === 'both').sort((a, b) => b.createdAt - a.createdAt));
+    }, (error) => {
+      console.error("Error fetching predefined notes:", error);
     });
 
     return () => {
@@ -105,24 +113,39 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ type }) => {
     try {
       const batch = writeBatch(db);
       const batchId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+      const baseTime = Date.now();
       
-      // Aggregate balance changes per fund
+      // Aggregate balance changes and track running balance per fund
       const fundChanges: Record<string, number> = {};
+      const fundRunningBalances: Record<string, number> = {};
       
-      validRows.forEach(row => {
+      // Initialize running balances with current fund balances
+      funds.forEach(f => {
+        fundRunningBalances[f.id] = f.balance;
+      });
+      
+      validRows.forEach((row, index) => {
         const amountNum = Number(row.amount);
         const fund = funds.find(f => f.id === row.fundId);
+        
+        // Ensure each row has a slightly different timestamp to preserve order
+        const rowTime = baseTime + index;
+        
+        // Update running balance for this fund
+        const balanceChange = type === 'income' ? amountNum : -amountNum;
+        fundRunningBalances[row.fundId] = (fundRunningBalances[row.fundId] || 0) + balanceChange;
         
         // 1. Create transaction doc
         const txRef = doc(collection(db, 'transactions'));
         const txData: any = {
           type,
           amount: amountNum,
-          date: Date.now(), // Use real-time date
+          date: rowTime, // Unique timestamp
           note: row.note.trim(),
           fundId: row.fundId,
           fundName: fund?.name || 'Unknown',
-          createdAt: Date.now(),
+          balanceAfter: fundRunningBalances[row.fundId],
+          createdAt: rowTime, // Unique timestamp
           createdBy: user?.email || 'Unknown'
         };
         
@@ -133,7 +156,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ type }) => {
         batch.set(txRef, txData);
 
         // 2. Aggregate fund balance changes
-        const balanceChange = type === 'income' ? amountNum : -amountNum;
         fundChanges[row.fundId] = (fundChanges[row.fundId] || 0) + balanceChange;
       });
 
@@ -179,7 +201,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ type }) => {
   };
 
   if (loading || authLoading) return <div>Đang tải...</div>;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!can('canAddTransaction')) return <Navigate to="/" replace />;
 
   const isIncome = type === 'income';
 

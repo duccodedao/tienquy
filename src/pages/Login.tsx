@@ -1,23 +1,73 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { Wallet, Mail, Lock } from 'lucide-react';
+import { Wallet, Mail, Lock, User as UserIcon } from 'lucide-react';
 
 export const Login = () => {
-  const { user, loginWithGoogle, loginWithEmail } = useAuth();
+  const { user, loginWithGoogle, loginWithEmail, registerWithEmail } = useAuth();
+  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [suggestion, setSuggestion] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('remembered_email');
+    const savedPassword = localStorage.getItem('remembered_password');
+    if (savedEmail && savedPassword) {
+      setEmail(savedEmail);
+      setPassword(savedPassword);
+      setRememberMe(true);
+    }
+  }, []);
 
   if (user) {
     return <Navigate to="/" replace />;
   }
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEmail(value);
+    
+    if (value && !value.includes('@')) {
+      setSuggestion(`${value}@gmail.com`);
+    } else {
+      setSuggestion('');
+    }
+  };
+
+  const applySuggestion = () => {
+    if (suggestion) {
+      setEmail(suggestion);
+      setSuggestion('');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
+    
     setIsSubmitting(true);
-    await loginWithEmail(email, password);
+    
+    if (rememberMe) {
+      localStorage.setItem('remembered_email', email);
+      localStorage.setItem('remembered_password', password);
+    } else {
+      localStorage.removeItem('remembered_email');
+      localStorage.removeItem('remembered_password');
+    }
+
+    if (isLogin) {
+      await loginWithEmail(email, password);
+    } else {
+      if (!displayName) {
+        setIsSubmitting(false);
+        return;
+      }
+      await registerWithEmail(email, password, displayName);
+    }
     setIsSubmitting(false);
   };
 
@@ -25,19 +75,42 @@ export const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4">
-            <Wallet size={32} />
+          <div className="mx-auto h-20 w-20 flex items-center justify-center mb-4">
+            <img 
+              src="https://hdd.io.vn/img/bmassloadings.png" 
+              alt="Logo" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900 dark:text-white">
-            FundManager Pro
+            Quỹ Trạm Y tế Vĩnh Trạch Đông
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Hệ thống quản lý quỹ và kế toán chuyên nghiệp
+            Hệ thống quản lý Quỹ Trạm Y tế Vĩnh Trạch Đông
           </p>
         </div>
         
         <div className="mt-8 space-y-6">
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên hiển thị</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <UserIcon className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    required={!isLogin}
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Nguyễn Văn A"
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
               <div className="relative">
@@ -48,11 +121,20 @@ export const Login = () => {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={handleEmailChange}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="admin@example.com"
                 />
               </div>
+              {suggestion && (
+                <button
+                  type="button"
+                  onClick={applySuggestion}
+                  className="mt-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                >
+                  Sử dụng: <span className="font-medium">{suggestion}</span>
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mật khẩu</label>
@@ -70,14 +152,41 @@ export const Login = () => {
                 />
               </div>
             </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                  Ghi nhớ tài khoản
+                </label>
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={isSubmitting}
               className="w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors shadow-sm disabled:opacity-50"
             >
-              {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập bằng Email'}
+              {isSubmitting ? 'Đang xử lý...' : (isLogin ? 'Đăng nhập bằng Email' : 'Đăng ký tài khoản')}
             </button>
           </form>
+
+          <div className="text-center text-sm">
+            <button 
+              type="button"
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+            >
+              {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
+            </button>
+          </div>
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">

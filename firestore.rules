@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - email: string (required)
+    //   - displayName: string
+    //   - photoURL: string
+    //   - role: string (user, admin)
+    //   - adminRequested: boolean
+    //   - isLocked: boolean
+    //   - lastLogin: number
+    //   - lastIP: string
+    //
+    // Collection: funds
+    // Document ID: fundId
+    // Fields:
+    //   - name: string (required)
+    //   - balance: number (required)
+    //   - createdAt: number (required)
+    //
+    // Collection: transactions
+    // Document ID: txId
+    // Fields:
+    //   - type: string (income, expense)
+    //   - amount: number
+    //   - fundId: string
+    //   - fundName: string
+    //   - note: string
+    //   - date: number
+    //   - batchId: string
+    //   - createdBy: string
+    //   - creatorName: string
+    //
+    // Collection: settings
+    // Document ID: security, permissions, predefinedNotes
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "bmassk3@gmail.com" || request.auth.token.email == "sonlyhongduc@gmail.com");
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function hasPermission(permission) {
+      let role = getUserRole();
+      return get(/databases/$(database)/documents/settings/permissions).data[role][permission] == true;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isNotLocked() {
+      return !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isLocked;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (
+        isOwner(userId) || 
+        isSuperAdmin() || 
+        (hasPermission('canManageAdmins') && isNotLocked())
+      );
+      allow delete: if isSuperAdmin() || (hasPermission('canManageAdmins') && isNotLocked());
+    }
+
+    // Funds collection
+    match /funds/{fundId} {
+      allow read: if isAuthenticated() && (hasPermission('canViewFunds') || isSuperAdmin());
+      allow create: if isAuthenticated() && (hasPermission('canManageFunds') || isSuperAdmin()) && isNotLocked();
+      allow update: if isAuthenticated() && (hasPermission('canManageFunds') || isSuperAdmin()) && isNotLocked();
+      allow delete: if isAuthenticated() && (hasPermission('canManageFunds') || isSuperAdmin()) && isNotLocked();
+    }
+
+    // Transactions collection
+    match /transactions/{txId} {
+      allow read: if isAuthenticated() && (hasPermission('canViewHistory') || isSuperAdmin());
+      allow create: if isAuthenticated() && (hasPermission('canAddTransaction') || isSuperAdmin()) && isNotLocked();
+      allow update: if isAuthenticated() && (hasPermission('canEditTransaction') || isSuperAdmin()) && isNotLocked();
+      allow delete: if isAuthenticated() && (hasPermission('canDeleteTransaction') || isSuperAdmin()) && isNotLocked();
+    }
+
+    // Settings collection
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || (
+        (settingId == 'security' && hasPermission('canManageIPs')) ||
+        (settingId == 'predefinedNotes' && hasPermission('canManageNotes'))
+      ) && isNotLocked();
+    }
+  }
+}

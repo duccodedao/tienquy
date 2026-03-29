@@ -28,6 +28,10 @@ export const PredefinedNotes = () => {
       const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PredefinedNote));
       setNotes(notesData.sort((a, b) => b.createdAt - a.createdAt));
       setLoading(false);
+    }, (error) => {
+      console.error("Error fetching predefined notes:", error);
+      toast.error("Không thể tải danh sách ghi chú");
+      setLoading(false);
     });
     return () => unsub();
   }, []);

@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "adminRequested": { "type": "boolean" },
+        "isLocked": { "type": "boolean" },
+        "lastLogin": { "type": "number" },
+        "lastIP": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "Fund": {
+      "title": "Fund",
+      "description": "Financial fund tracking",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "balance", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Income or expense record",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "fundId": { "type": "string" },
+        "fundName": { "type": "string" },
+        "note": { "type": "string" },
+        "date": { "type": "number" },
+        "batchId": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "creatorName": { "type": "string" }
+      },
+      "required": ["type", "amount", "fundId", "date"]
+    },
+    "RolePermissions": {
+      "title": "RolePermissions",
+      "description": "Granular permissions for a role",
+      "type": "object",
+      "properties": {
+        "canViewDashboard": { "type": "boolean" },
+        "canViewFunds": { "type": "boolean" },
+        "canViewHistory": { "type": "boolean" },
+        "canViewReports": { "type": "boolean" },
+        "canViewSettings": { "type": "boolean" },
+        "canAddTransaction": { "type": "boolean" },
+        "canEditTransaction": { "type": "boolean" },
+        "canDeleteTransaction": { "type": "boolean" },
+        "canManageAdmins": { "type": "boolean" },
+        "canManageIPs": { "type": "boolean" },
+        "canExportData": { "type": "boolean" },
+        "canImportData": { "type": "boolean" },
+        "canManageFunds": { "type": "boolean" },
+        "canManageNotes": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "/funds/{fundId}": {
+      "schema": "Fund",
+      "description": "Fund documents"
+    },
+    "/transactions/{txId}": {
+      "schema": "Transaction",
+      "description": "Transaction documents"
+    },
+    "/settings/security": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "blockedIPs": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "description": "Security settings like blocked IPs"
+    },
+    "/settings/permissions": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "RolePermissions" },
+          "admin": { "$ref": "RolePermissions" }
+        }
+      },
+      "description": "Role-based permissions configuration"
+    },
+    "/settings/predefinedNotes": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "description": "Predefined notes for transactions"
+    }
+  }
+}

@@ -8,8 +8,11 @@ import {
   LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
 import { format, subDays } from 'date-fns';
+import { usePermissions } from '../contexts/PermissionsContext';
+import { Navigate } from 'react-router-dom';
 
 export const Reports = () => {
+  const { can } = usePermissions();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [funds, setFunds] = useState<Fund[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +43,7 @@ export const Reports = () => {
       },
       (error) => {
         console.error("Error fetching funds:", error);
+        setLoading(false);
       }
     );
 
@@ -102,6 +106,7 @@ export const Reports = () => {
   const totalBalance = funds.reduce((s, f) => s + f.balance, 0);
 
   if (loading) return <div>Đang tải...</div>;
+  if (!can('canViewReports')) return <Navigate to="/" replace />;
 
   return (
     <div className="space-y-6">

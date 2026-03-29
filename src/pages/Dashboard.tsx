@@ -19,8 +19,12 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { usePermissions } from '../contexts/PermissionsContext';
+import { Navigate } from 'react-router-dom';
+import { QuickGuide } from '../components/QuickGuide';
 
 export const Dashboard = () => {
+  const { can } = usePermissions();
   const [funds, setFunds] = useState<Fund[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +45,7 @@ export const Dashboard = () => {
       },
       (error) => {
         console.error("Error fetching funds:", error);
+        setLoading(false);
       }
     );
 
@@ -48,7 +53,15 @@ export const Dashboard = () => {
       query(collection(db, 'transactions'), orderBy('date', 'desc')), 
       (snapshot) => {
         const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-        setTransactions(txData);
+        
+        // Client-side secondary sorting to avoid composite index requirement
+        const sortedData = txData.sort((a, b) => {
+          if (b.date !== a.date) return b.date - a.date;
+          if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+          return b.id.localeCompare(a.id);
+        });
+        
+        setTransactions(sortedData);
         setLoading(false);
       },
       (error) => {
@@ -133,6 +146,8 @@ export const Dashboard = () => {
     </div>;
   }
 
+  if (!can('canViewDashboard')) return <Navigate to="/history" replace />;
+
   const safeFormat = (date: number | string | Date, formatStr: string) => {
     if (!date || isNaN(new Date(date).getTime())) return 'N/A';
     return format(new Date(date), formatStr);
@@ -140,7 +155,11 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tổng quan</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tổng quan</h1>
+      </div>
+      
+      <QuickGuide />
       
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -262,6 +281,7 @@ export const Dashboard = () => {
                 <th className="px-6 py-3 rounded-tl-lg">Ngày giờ</th>
                 <th className="px-6 py-3">Loại</th>
                 <th className="px-6 py-3">Tổng tiền</th>
+                <th className="px-6 py-3">Số dư cuối</th>
                 <th className="px-6 py-3">Số lượng</th>
                 <th className="px-6 py-3">Ghi chú</th>
                 <th className="px-6 py-3 rounded-tr-lg text-right">Thao tác</th>
@@ -303,6 +323,15 @@ export const Dashboard = () => {
                           {totalIncome > 0 ? '+' : '-'}{formatCurrency(Math.abs(netAmount))}
                         </span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                      {(() => {
+                        const uniqueFunds = new Set(group.map(tx => tx.fundId));
+                        if (uniqueFunds.size === 1) {
+                          return group[0].balanceAfter !== undefined ? formatCurrency(group[0].balanceAfter) : '-';
+                        }
+                        return <span className="text-xs text-gray-400 italic">Nhiều quỹ</span>;
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs">
                       {incomeCount > 0 && <span className="text-green-600">{incomeCount} Thu </span>}
@@ -381,6 +410,7 @@ export const Dashboard = () => {
                     <tr>
                       <th className="px-4 py-3">Loại</th>
                       <th className="px-4 py-3">Số tiền</th>
+                      <th className="px-4 py-3">Số dư cuối</th>
                       <th className="px-4 py-3">Quỹ</th>
                       <th className="px-4 py-3">Ghi chú</th>
                     </tr>
@@ -397,6 +427,9 @@ export const Dashboard = () => {
                         </td>
                         <td className={`px-4 py-3 font-medium ${tx.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                          {tx.balanceAfter !== undefined ? formatCurrency(tx.balanceAfter) : '-'}
                         </td>
                         <td className="px-4 py-3">{tx.fundName}</td>
                         <td className="px-4 py-3">{tx.note}</td>

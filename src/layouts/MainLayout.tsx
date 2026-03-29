@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -17,32 +17,94 @@ import {
   Moon,
   Sun,
   Monitor,
-  Users
+  Users,
+  Bell,
+  BellOff,
+  ShieldAlert
 } from 'lucide-react';
-import { Toaster } from 'sonner';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Toaster, toast } from 'sonner';
+import { NotificationManager } from '../components/NotificationManager';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { usePermissions } from '../contexts/PermissionsContext';
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, adminOnly: false },
-  { path: '/funds', label: 'Quản lý quỹ', icon: <Wallet size={20} />, adminOnly: false },
-  { path: '/income', label: 'Nhập quỹ (Thu)', icon: <ArrowDownCircle size={20} />, adminOnly: true },
-  { path: '/expense', label: 'Xuất quỹ (Chi)', icon: <ArrowUpCircle size={20} />, adminOnly: true },
-  { path: '/history', label: 'Lịch sử', icon: <History size={20} />, adminOnly: false },
-  { path: '/reports', label: 'Thống kê', icon: <BarChart3 size={20} />, adminOnly: false },
-  { path: '/settings', label: 'Ghi chú mẫu', icon: <Settings size={20} />, adminOnly: false },
-  { path: '/admins', label: 'Quản lý Admin', icon: <Users size={20} />, superAdminOnly: true },
+  { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'canViewDashboard' },
+  { path: '/funds', label: 'Quản lý quỹ', icon: <Wallet size={20} />, permission: 'canViewFunds' },
+  { path: '/income', label: 'Nhập quỹ (Thu)', icon: <ArrowDownCircle size={20} />, permission: 'canAddTransaction' },
+  { path: '/expense', label: 'Xuất quỹ (Chi)', icon: <ArrowUpCircle size={20} />, permission: 'canAddTransaction' },
+  { path: '/history', label: 'Lịch sử', icon: <History size={20} />, permission: 'canViewHistory' },
+  { path: '/reports', label: 'Thống kê', icon: <BarChart3 size={20} />, permission: 'canViewReports' },
+  { path: '/settings', label: 'Ghi chú mẫu', icon: <Settings size={20} />, permission: 'canViewSettings' },
+  { path: '/admins', label: 'Quản lý Admin', icon: <Users size={20} />, permission: 'canManageAdmins' },
 ];
 
 export const MainLayout = () => {
-  const { user, isAdmin, isSuperAdmin, logout, loading } = useAuth();
+  const { user, isAdmin, isSuperAdmin, adminRequested, isBlocked, blockReason, logout, loading } = useAuth();
+  const { can } = usePermissions();
   const { theme, setTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">Đang tải...</div>;
+    return <LoadingScreen />;
+  }
+
+  if (isBlocked) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4">
+        <ShieldAlert size={64} className="text-red-500 mb-4" />
+        <h1 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-2">Truy cập bị từ chối</h1>
+        <p className="text-gray-600 dark:text-gray-400 mb-6 text-center max-w-md">{blockReason}</p>
+        <button 
+          onClick={logout} 
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          Đăng xuất
+        </button>
+      </div>
+    );
   }
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      toast.error('Trình duyệt của bạn không hỗ trợ thông báo');
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        toast.success('Đã bật thông báo hệ thống');
+      } else {
+        toast.error('Bạn đã từ chối nhận thông báo');
+      }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+    }
+  };
+
+  const handleRequestAdmin = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { adminRequested: true });
+      toast.success('Đã gửi yêu cầu cấp quyền Admin');
+    } catch (error) {
+      console.error('Error requesting admin:', error);
+      toast.error('Có lỗi xảy ra khi gửi yêu cầu');
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden">
@@ -61,7 +123,15 @@ export const MainLayout = () => {
         }`}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
-          <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">FundManager</span>
+          <div className="flex items-center space-x-2">
+            <img 
+              src="https://hdd.io.vn/img/bmassloadings.png" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain"
+              referrerPolicy="no-referrer"
+            />
+            <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Quỹ TYT VTĐ</span>
+          </div>
           <button onClick={toggleSidebar} className="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
             <X size={24} />
           </button>
@@ -69,9 +139,8 @@ export const MainLayout = () => {
 
         <nav className="p-4 space-y-1 overflow-y-auto h-[calc(100vh-4rem)]">
           {navItems.filter(item => {
-            if (item.superAdminOnly) return isSuperAdmin;
-            if (item.adminOnly) return isAdmin;
-            return true;
+            // @ts-ignore
+            return can(item.permission);
           }).map((item) => (
             <NavLink
               key={item.path}
@@ -103,7 +172,26 @@ export const MainLayout = () => {
             <Menu size={24} />
           </button>
 
-          <div className="flex items-center space-x-4 ml-auto">
+          <div className="flex items-center space-x-2 sm:space-x-4 ml-auto">
+            {/* Notifications */}
+            {'Notification' in window && notificationPermission !== 'granted' && (
+              <button
+                onClick={requestNotificationPermission}
+                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 rounded-lg transition-colors"
+                title="Bật thông báo"
+              >
+                <BellOff size={20} />
+              </button>
+            )}
+            {'Notification' in window && notificationPermission === 'granted' && (
+              <button
+                className="p-2 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors"
+                title="Thông báo đã bật"
+              >
+                <Bell size={20} />
+              </button>
+            )}
+
             {/* Theme Toggle */}
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-full p-1">
               <button
@@ -130,9 +218,23 @@ export const MainLayout = () => {
             </div>
 
             {/* User Profile & Logout */}
-            <div className="flex items-center space-x-3 border-l border-gray-200 dark:border-gray-700 pl-4">
+            <div className="flex items-center space-x-2 sm:space-x-3 border-l border-gray-200 dark:border-gray-700 pl-2 sm:pl-4">
               {user ? (
                 <>
+                  {!isAdmin && !isSuperAdmin && (
+                    <button
+                      onClick={handleRequestAdmin}
+                      disabled={adminRequested}
+                      className={`px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+                        adminRequested 
+                          ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 cursor-not-allowed'
+                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50'
+                      }`}
+                    >
+                      <span className="hidden sm:inline">{adminRequested ? 'Đang chờ duyệt Admin' : 'Xin cấp quyền Admin'}</span>
+                      <span className="sm:hidden">{adminRequested ? 'Đang chờ' : 'Xin quyền'}</span>
+                    </button>
+                  )}
                   <div className="hidden sm:flex flex-col items-end">
                     <span className="text-sm font-medium">{user.displayName || user.email?.split('@')[0]}</span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">{user.email}</span>
@@ -168,6 +270,7 @@ export const MainLayout = () => {
         </main>
       </div>
       <Toaster position="top-right" richColors />
+      <NotificationManager />
 
       <ConfirmModal
         isOpen={confirmLogout}

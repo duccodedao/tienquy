@@ -7,10 +7,12 @@ import { Plus, Edit2, Trash2, X, Check, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../contexts/PermissionsContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export const Funds = () => {
   const { isAdmin, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [funds, setFunds] = useState<Fund[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -26,6 +28,10 @@ export const Funds = () => {
     const unsub = onSnapshot(collection(db, 'funds'), (snapshot) => {
       const fundsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fund));
       setFunds(fundsData.sort((a, b) => b.createdAt - a.createdAt));
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching funds:", error);
+      toast.error("Không thể tải danh sách quỹ");
       setLoading(false);
     });
     return () => unsub();
@@ -112,7 +118,7 @@ export const Funds = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quản lý Quỹ</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Tổng số dư tất cả các quỹ: <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(totalBalance)}</span></p>
         </div>
-        {isAdmin && (
+        {can('canManageFunds') && (
           <button
             onClick={() => setIsAdding(true)}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
@@ -163,7 +169,7 @@ export const Funds = () => {
                 <th className="px-6 py-4">Tên quỹ</th>
                 <th className="px-6 py-4 text-right">Số dư</th>
                 <th className="px-6 py-4">Ngày tạo</th>
-                {isAdmin && <th className="px-6 py-4 text-right">Thao tác</th>}
+                {can('canManageFunds') && <th className="px-6 py-4 text-right">Thao tác</th>}
               </tr>
             </thead>
             <tbody>
@@ -189,7 +195,7 @@ export const Funds = () => {
                   <td className="px-6 py-4">
                     {formatDate(fund.createdAt)}
                   </td>
-                  {isAdmin && (
+                  {can('canManageFunds') && (
                     <td className="px-6 py-4 text-right">
                       {editingId === fund.id ? (
                         <div className="flex justify-end gap-2">

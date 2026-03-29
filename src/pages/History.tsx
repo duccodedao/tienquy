@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, incr
 import { db } from '../firebase';
 import { Transaction, Fund, TransactionType } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
-import { Search, Filter, Download, Upload, Trash2, Edit2, ChevronLeft, ChevronRight, X, Check, Eye, Copy, Image as ImageIcon } from 'lucide-react';
+import { Search, Filter, Download, Upload, Trash2, Edit2, ChevronLeft, ChevronRight, X, Check, Eye, Copy, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -11,10 +11,12 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../contexts/PermissionsContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export const History = () => {
   const { user, isAdmin } = useAuth();
+  const { can } = usePermissions();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [funds, setFunds] = useState<Fund[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,13 +42,93 @@ export const History = () => {
 
   const [deleteTx, setDeleteTx] = useState<Transaction | null>(null);
   const [confirmEditTx, setConfirmEditTx] = useState<Transaction | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+
+  const handleRecalculateBalances = async () => {
+    if (!window.confirm('Bạn có chắc chắn muốn tính toán lại toàn bộ số dư từ đầu? Hành động này sẽ cập nhật lại số dư của tất cả các quỹ dựa trên lịch sử giao dịch.')) {
+      return;
+    }
+
+    setIsRecalculating(true);
+    const toastId = toast.loading('Đang tính toán lại số dư...');
+
+    try {
+      // Get all transactions sorted by date ASC, then createdAt ASC, then id ASC for maximum stability
+      const allTx = [...transactions].sort((a, b) => {
+        if (a.date !== b.date) return a.date - b.date;
+        if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+        return a.id.localeCompare(b.id);
+      });
+      
+      const runningBalances: Record<string, number> = {};
+      funds.forEach(f => {
+        runningBalances[f.id] = 0;
+      });
+
+      let currentBatch = writeBatch(db);
+      let operationCount = 0;
+
+      for (const tx of allTx) {
+        const amount = tx.amount || 0;
+        const change = tx.type === 'income' ? amount : -amount;
+        
+        if (runningBalances[tx.fundId] === undefined) {
+           runningBalances[tx.fundId] = 0;
+        }
+        
+        runningBalances[tx.fundId] += change;
+        
+        const txRef = doc(db, 'transactions', tx.id);
+        currentBatch.update(txRef, { balanceAfter: runningBalances[tx.fundId] });
+        operationCount++;
+
+        if (operationCount >= 450) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          operationCount = 0;
+        }
+      }
+
+      // Update fund balances
+      for (const fund of funds) {
+        const fundRef = doc(db, 'funds', fund.id);
+        currentBatch.update(fundRef, { balance: runningBalances[fund.id] || 0 });
+        operationCount++;
+        
+        if (operationCount >= 450) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          operationCount = 0;
+        }
+      }
+
+      if (operationCount > 0) {
+        await currentBatch.commit();
+      }
+
+      toast.success('Đã tính toán lại toàn bộ số dư thành công', { id: toastId });
+    } catch (error) {
+      console.error('Error recalculating balances:', error);
+      toast.error('Lỗi khi tính toán lại số dư', { id: toastId });
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
 
   useEffect(() => {
     const unsubTx = onSnapshot(
       query(collection(db, 'transactions'), orderBy('date', 'desc')), 
       (snapshot) => {
         const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-        setTransactions(txData);
+        
+        // Client-side secondary sorting to avoid composite index requirement
+        const sortedData = txData.sort((a, b) => {
+          if (b.date !== a.date) return b.date - a.date;
+          if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+          return b.id.localeCompare(a.id);
+        });
+        
+        setTransactions(sortedData);
         setLoading(false);
       },
       (error) => {
@@ -64,6 +146,7 @@ export const History = () => {
       },
       (error) => {
         console.error("Error fetching funds:", error);
+        setLoading(false);
       }
     );
 
@@ -197,12 +280,17 @@ export const History = () => {
 
       // Update transaction document
       const txRef = doc(db, 'transactions', confirmEditTx.id);
+      const revertChange = confirmEditTx.type === 'income' ? -confirmEditTx.amount : confirmEditTx.amount;
+      const applyChange = editData.type === 'income' ? newAmount : -newAmount;
+      const netChange = revertChange + applyChange;
+      
       batch.update(txRef, {
         note: editData.note,
         amount: newAmount,
         type: editData.type,
         fundId: editData.fundId,
-        fundName: newFund?.name || confirmEditTx.fundName
+        fundName: newFund?.name || confirmEditTx.fundName,
+        balanceAfter: (confirmEditTx.balanceAfter || 0) + netChange
       });
 
       await batch.commit();
@@ -221,10 +309,15 @@ export const History = () => {
   };
 
   const exportToExcel = () => {
+    if (!can('canExportData')) {
+      toast.error('Bạn không có quyền xuất dữ liệu');
+      return;
+    }
     const dataToExport = filteredTransactions.map(tx => ({
       'Ngày giờ': safeFormat(tx.date, 'dd/MM/yyyy HH:mm'),
       'Loại': tx.type === 'income' ? 'Thu' : 'Chi',
       'Số tiền': tx.amount,
+      'Số dư cuối': tx.balanceAfter || 0,
       'Quỹ': tx.fundName,
       'Ghi chú': tx.note,
       'Người tạo': tx.createdBy
@@ -237,15 +330,20 @@ export const History = () => {
   };
 
   const exportToPDF = () => {
+    if (!can('canExportData')) {
+      toast.error('Bạn không có quyền xuất dữ liệu');
+      return;
+    }
     const doc = new jsPDF();
     
     doc.text('Lịch sử giao dịch', 14, 15);
     
-    const tableColumn = ["Ngày giờ", "Loại", "Số tiền", "Quỹ", "Ghi chú"];
+    const tableColumn = ["Ngày giờ", "Loại", "Số tiền", "Số dư cuối", "Quỹ", "Ghi chú"];
     const tableRows = filteredTransactions.map(tx => [
       safeFormat(tx.date, 'dd/MM/yyyy HH:mm'),
       tx.type === 'income' ? 'Thu' : 'Chi',
       new Intl.NumberFormat('vi-VN').format(tx.amount),
+      tx.balanceAfter !== undefined ? new Intl.NumberFormat('vi-VN').format(tx.balanceAfter) : '-',
       tx.fundName,
       tx.note
     ]);
@@ -261,6 +359,10 @@ export const History = () => {
   };
 
   const copyAsText = () => {
+    if (!can('canExportData')) {
+      toast.error('Bạn không có quyền xuất dữ liệu');
+      return;
+    }
     if (filteredTransactions.length === 0) {
       toast.error('Không có dữ liệu để copy');
       return;
@@ -277,8 +379,9 @@ export const History = () => {
       const dateStr = safeFormat(tx.date, 'dd/MM/yyyy HH:mm');
       const typeStr = tx.type === 'income' ? 'Thu' : 'Chi';
       const amountStr = formatCurrency(tx.amount);
+      const balanceAfterStr = tx.balanceAfter !== undefined ? formatCurrency(tx.balanceAfter) : '-';
       
-      text += `${index + 1}. [${dateStr}] ${typeStr} - ${amountStr}\n`;
+      text += `${index + 1}. [${dateStr}] ${typeStr} - ${amountStr} (Số dư cuối: ${balanceAfterStr})\n`;
       text += `   Quỹ: ${tx.fundName}\n`;
       text += `   Ghi chú: ${tx.note}\n\n`;
 
@@ -303,6 +406,10 @@ export const History = () => {
   };
 
   const exportAsImage = async () => {
+    if (!can('canExportData')) {
+      toast.error('Bạn không có quyền xuất dữ liệu');
+      return;
+    }
     if (!tableRef.current) return;
     
     try {
@@ -328,7 +435,10 @@ export const History = () => {
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!isAdmin) return;
+    if (!can('canImportData')) {
+      toast.error('Bạn không có quyền nhập dữ liệu');
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -441,7 +551,18 @@ export const History = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Lịch sử giao dịch</h1>
         <div className="flex flex-wrap gap-2">
-          {isAdmin && (
+          {can('canRecalculateBalances') && (
+            <button
+              onClick={handleRecalculateBalances}
+              disabled={isRecalculating || transactions.length === 0}
+              className="flex items-center px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm shadow-sm disabled:opacity-50"
+              title="Tính toán lại toàn bộ số dư dựa trên lịch sử giao dịch"
+            >
+              <RefreshCw size={16} className={`mr-2 ${isRecalculating ? 'animate-spin' : ''}`} />
+              Tính tự động từ đầu
+            </button>
+          )}
+          {can('canImportData') && (
             <>
               <button onClick={downloadTemplate} className="flex items-center px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm shadow-sm">
                 Tải File Mẫu
@@ -459,22 +580,26 @@ export const History = () => {
               </label>
             </>
           )}
-          <button onClick={exportToExcel} className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shadow-sm">
-            <Download size={16} className="mr-2" />
-            Excel
-          </button>
-          <button onClick={exportToPDF} className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm shadow-sm">
-            <Download size={16} className="mr-2" />
-            PDF
-          </button>
-          <button onClick={copyAsText} className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm shadow-sm">
-            <Copy size={16} className="mr-2" />
-            Copy Text
-          </button>
-          <button onClick={exportAsImage} className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm shadow-sm">
-            <ImageIcon size={16} className="mr-2" />
-            Xuất Ảnh
-          </button>
+          {can('canExportData') && (
+            <>
+              <button onClick={exportToExcel} className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shadow-sm">
+                <Download size={16} className="mr-2" />
+                Excel
+              </button>
+              <button onClick={exportToPDF} className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm shadow-sm">
+                <Download size={16} className="mr-2" />
+                PDF
+              </button>
+              <button onClick={copyAsText} className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm shadow-sm">
+                <Copy size={16} className="mr-2" />
+                Copy Text
+              </button>
+              <button onClick={exportAsImage} className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm shadow-sm">
+                <ImageIcon size={16} className="mr-2" />
+                Xuất Ảnh
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -536,6 +661,7 @@ export const History = () => {
                 <th className="px-6 py-4">Ngày giờ</th>
                 <th className="px-6 py-4">Loại</th>
                 <th className="px-6 py-4">Số tiền</th>
+                <th className="px-6 py-4">Số dư cuối</th>
                 <th className="px-6 py-4">Quỹ</th>
                 <th className="px-6 py-4">Ghi chú</th>
                 <th className="px-6 py-4 text-right">Thao tác</th>
@@ -608,6 +734,9 @@ export const History = () => {
                       <td className={`px-6 py-4 font-medium whitespace-nowrap ${tx.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                        {tx.balanceAfter !== undefined ? formatCurrency(tx.balanceAfter) : '-'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">{tx.fundName}</td>
                       <td className="px-6 py-4 max-w-xs truncate" title={tx.note}>
                         {tx.note}
@@ -623,15 +752,15 @@ export const History = () => {
                               <Eye size={18} />
                             </button>
                           )}
-                          {isAdmin && (
-                            <>
-                              <button onClick={() => handleEdit(tx)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Sửa">
-                                <Edit2 size={18} />
-                              </button>
-                              <button onClick={() => setDeleteTx(tx)} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Xóa">
-                                <Trash2 size={18} />
-                              </button>
-                            </>
+                          {can('canEditTransaction') && (
+                            <button onClick={() => handleEdit(tx)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Sửa">
+                              <Edit2 size={18} />
+                            </button>
+                          )}
+                          {can('canDeleteTransaction') && (
+                            <button onClick={() => setDeleteTx(tx)} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Xóa">
+                              <Trash2 size={18} />
+                            </button>
                           )}
                         </div>
                       </td>
@@ -707,6 +836,7 @@ export const History = () => {
                       <th className="px-4 py-3">Ngày giờ</th>
                       <th className="px-4 py-3">Loại</th>
                       <th className="px-4 py-3">Số tiền</th>
+                      <th className="px-4 py-3">Số dư cuối</th>
                       <th className="px-4 py-3">Quỹ</th>
                       <th className="px-4 py-3">Ghi chú</th>
                     </tr>
@@ -724,6 +854,9 @@ export const History = () => {
                         </td>
                         <td className={`px-4 py-3 font-medium whitespace-nowrap ${tx.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                          {tx.balanceAfter !== undefined ? formatCurrency(tx.balanceAfter) : '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">{tx.fundName}</td>
                         <td className="px-4 py-3">{tx.note}</td>
